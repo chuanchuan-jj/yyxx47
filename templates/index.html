@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>葡萄酒聚类可视化平台</title>
+    <!-- 引入 ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        #container { width: 800px; height: 600px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .controls { margin: 20px 0; background: white; padding: 20px; border-radius: 12px; width: 800px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .slider-item { display: flex; align-items: center; margin: 8px 0; gap: 20px; }
+        input[type=range] { width: 300px; }
+        .info { margin-top: 10px; color: #555; font-size: 14px; }
+        .badge { display: inline-block; background: #1e90ff; color: white; padding: 2px 12px; border-radius: 20px; margin-right: 10px; }
+    </style>
+</head>
+<body>
+    <h2>🍷 月牙形数据分类（DBSCAN + PCA 可视化）</h2>
+    <div class="controls">
+        <div class="slider-item">
+            <span style="width:100px;">邻域半径 (eps)：</span>
+            <input type="range" id="epsSlider" min="0.5" max="5" step="0.1" value="2.5">
+            <span id="epsValue">2.5</span>
+        </div>
+        <div class="slider-item">
+            <span style="width:100px;">最小样本数：</span>
+            <input type="range" id="minSamplesSlider" min="2" max="20" step="1" value="5">
+            <span id="minSamplesValue">5</span>
+        </div>
+        <button onclick="fetchData()" style="background:#1e90ff;color:white;border:none;padding:8px 30px;border-radius:20px;cursor:pointer;font-size:16px;">🚀 更新聚类</button>
+        <div class="info" id="metricsInfo">调整兰德系数(ARI): -- | 归一化互信息(NMI): -- | 簇数: -- | 噪音点: --</div>
+    </div>
+    <div id="container"></div>
+
+    <script>
+        var chart = echarts.init(document.getElementById('container'));
+
+        async function fetchData() {
+            const eps = document.getElementById('epsSlider').value;
+            const minSamples = document.getElementById('minSamplesSlider').value;
+            document.getElementById('epsValue').innerText = eps;
+            document.getElementById('minSamplesValue').innerText = minSamples;
+
+            try {
+                const response = await fetch(`http://127.0.0.1:5000/api/cluster?eps=${eps}&min_samples=${minSamples}`);
+                const data = await response.json();
+
+                document.getElementById('metricsInfo').innerHTML = `
+                    调整兰德系数(ARI): <b>${data.ari}</b> | 
+                    归一化互信息(NMI): <b>${data.nmi}</b> | 
+                    簇数: <b>${data.n_clusters}</b> | 
+                    噪音点: <b style="color:red;">${data.n_noise}</b>
+                `;
+
+                const points = data.pca_points;
+                const labels = data.cluster_labels;
+                
+                const uniqueLabels = [...new Set(labels)];
+                const colorMap = {};
+                uniqueLabels.forEach((label, index) => {
+                    if (label === -1) colorMap[label] = '#d3d3d3';
+                    else colorMap[label] = ['#5470c6','#fac858','#ee6666','#73c0de','#3ba272'][index % 5];
+                });
+
+                const scatterData = points.map((point, idx) => ({
+                    value: [point[0], point[1]],
+                    itemStyle: { color: colorMap[labels[idx]] }
+                }));
+
+                chart.setOption({
+                    title: { text: 'PCA 降维后的聚类分布', left: 'center' },
+                    tooltip: { trigger: 'item', formatter: (p) => `坐标: (${p.data.value[0].toFixed(2)}, ${p.data.value[1].toFixed(2)})` },
+                    xAxis: { name: '第一主成分', splitLine: { show: false } },
+                    yAxis: { name: '第二主成分', splitLine: { show: false } },
+                    series: [{
+                        type: 'scatter',
+                        data: scatterData,
+                        symbolSize: 12,
+                        emphasis: { focus: 'series' }
+                    }]
+                });
+
+            } catch (error) {
+                alert('请求后端失败！请确保已启动 Python 后端 (py app.py)');
+                console.error(error);
+            }
+        }
+
+        window.onload = fetchData;
+        document.getElementById('epsSlider').oninput = fetchData;
+        document.getElementById('minSamplesSlider').oninput = fetchData;
+    </script>
+</body>
+</html>
